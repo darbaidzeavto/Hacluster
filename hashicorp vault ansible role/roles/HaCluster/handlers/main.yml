@@ -1,0 +1,5 @@
+
+- name: restart hacluster
+  shell: |
+    pcs cluster stop --all
+    pcs cluster start --all

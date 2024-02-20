@@ -1,0 +1,35 @@
+
+- name: check cluster if exist
+  shell: pcs status cluster | grep -o  Online | sort -u
+  register: check_cluster
+
+- name: destroy cluster if exist
+  shell: pcs cluster destroy
+  when: '"Online" in check_cluster.stdout'
+
+- name: generate nodes string
+  set_fact:
+    hacluster_joined_nodes: "{{ hacluster_nodes | join(' ') }}"
+
+- name: authenticate cluster nodes
+  shell: pcs host auth -u hacluster -p '{{ hacluster_password }}'  {{ hacluster_joined_nodes }}
+
+- name: setup cluster nodes
+  shell: pcs cluster setup hacluster {{ hacluster_joined_nodes }} --force
+  run_once: true
+
+
+- name: start/enable cluster
+  shell: |
+    pcs cluster start --all
+    pcs cluster enable --all
+  run_once: true
+
+- name: configure cluster properties
+  shell: pcs property set stonith-enabled=false
+
+- name: create virtual_ip resource
+  shell: pcs resource create virtual_ip ocf:heartbeat:IPaddr2 ip={{ hacluster_virtual_ip }} cidr_netmask=32 op monitor interval=30s
+  notify:
+    - restart hacluster
+  run_once: true

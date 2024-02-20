@@ -1,0 +1,24 @@
+
+- name: install hacluster packages
+  apt:
+    name:
+      - corosync
+      - pacemaker
+      - pcs
+      - resource-agents
+    state: present
+
+- name: enable hacluster services
+  systemd:
+    name: "{{ item }}"
+    enabled: yes
+  with_items:
+    - pcsd
+    - corosync
+    - pacemaker
+
+- name: start pcsd
+  systemd:
+    name: pcsd
+    state: started
+

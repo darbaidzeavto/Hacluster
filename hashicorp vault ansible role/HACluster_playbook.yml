@@ -1,0 +1,12 @@
+- name: deployment using roles
+  hosts: HaCluster
+  become: true
+
+  roles:
+    - name: HaCluster
+      vars:
+        hacluster_nodes: [x.x.x.x, x.x.x.x, x.x.x.x]
+        hacluster_password: "admin"
+        hacluster_virtual_ip: x.x.x.x
+
+

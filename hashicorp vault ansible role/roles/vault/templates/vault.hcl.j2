@@ -1,0 +1,19 @@
+listener "tcp" {
+  address          = "0.0.0.0:8200"
+  tls_disable      = "{{ vault_tls_disable }}"
+  tls_disable_client_certs = "{{ vault_tls_disable_client_certs }}"
+  tls_cert_file    = "/etc/vault/ssl/{{ vault_tls_cert_file }}"
+  tls_key_file     = "/etc/vault/ssl/{{ vault_tls_key_file }}"
+}
+
+storage "raft" {
+  path    = "/opt/vault/data/"
+  node_id = "{{ ansible_hostname }}"
+}
+
+disable_mlock = "{{ vault_disable_mlock }}"
+
+api_addr =  "https://{{ vault_api_addr }}:{{ vault_api_port }}"
+cluster_addr = "https://{{ vault_api_addr }}:{{ vault_cluster_port }}"
+
+ui = true

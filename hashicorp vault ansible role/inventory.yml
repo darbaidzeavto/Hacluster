@@ -1,0 +1,4 @@
+[HaCluster]
+SrvVaultN1.ITA.local  ansible_ssh_host=172.17.20.41
+SrvVaultN2.ITA.local  ansible_ssh_host=172.17.20.42
+SrvVaultN3.ITA.local  ansible_ssh_host=172.17.20.41

@@ -1,0 +1,133 @@
+---
+
+- name: Copy vault binary file to targeted server
+    ansible.builtin.copy:
+    src: vault
+    dest: /usr/local/bin
+    owner: root
+    group: root
+    mode: "0774"
+  
+- name: create directory for data files
+  file:
+    path: "/opt/vault/data"
+    state: directroy
+    mode: 755
+    recurse: true
+
+- name: create vault configuration directory
+  file:
+    path: "/etc/vault"
+    state: directroy
+    mode: 755
+
+- name: copy vault configuration file from template
+  template:
+    src: templates/vault.hcl.j2
+    dest: /etc/vault.hcl
+  enviroment:
+    VAULT_ADDR: "http://{{ ansible_host }}:8200"
+
+- name: create directory for certificates
+  file:
+    path: "/etc/vault/ssl/"
+    state: directory
+
+- name: copy ssl certificates to host
+    ansible.builtin.copy:
+      src: "{{ item }}"
+      dest: "/etc/vault/ssl/"
+    with_fileglob:
+      - files/ssl/{{ vault_tls_cert_file_name }}
+
+- name: create vault service file
+  template:
+    src: files/vault.service
+    dest: /etc/systemd/system/vault.service
+
+- name: start vault service
+  shell: systemctl start vault
+
+- name: wait 20 seconds until vault start
+  ansible.builtin.pause:
+    seconds: 20
+
+- name: initialize vault operator
+  shell: vault operator init -key-shares=5 -key-threshold=3 -format=json > /tmp/vault_init.json
+  enviroment:
+    VAULT_ADDR: "http://{{ inventory_hostname }}:8200"
+  register: vault_init_results
+  when:
+    - hostvars[inventory_hostname].vault_node_sequence == "first"
+
+- name: change permissions to init file
+  ansible.builtin.file:
+    path: /tmp/vault_init.json
+    owner: root
+    group: root
+    mode: '0775'
+  when:
+    - hostvars[inventory_hostname].vault_node_sequence == "first"
+
+- name: Copy init output file to ansible machine
+  ansible.builtin.fetch:
+    src: /tmp/vault_init.json
+    dest: /tmp/vault_init.json
+    flat: true
+  when: 
+    - hostvars[inventory_hostname].vault_node_sequence == "first"
+
+- name: Copy init output file to all hosts
+  copy:
+    src: /tmp/vault_init.json
+    dest: "/tmp/vault_init.json"
+
+- name: Get init output file content
+  shell: cat /tmp/vault_init.json
+  register: result
+
+- name: Save the JSON data to a Variable as a Fact
+  set_fact:
+    jsondata: "{{ result.stdout | from_json }}"
+
+- name: Set unseal keys
+  set_fact:
+    unseal_keys: "{{ jsondata | json_query(jmesquery) }}"
+  vars:
+    jmesquery: 'unseal_keys_b64'
+
+- name: Unseal vault first node
+  shell: vault operator unseal {{ item }}
+  environment:
+    VAULT_ADDR: "https://{{ inventory_hostname }}:8200"
+  loop: "{{ unseal_keys[:3] }}"
+  no_log: true
+  when: 
+    - hostvars[inventory_hostname].vault_node_sequence == "first"
+
+- name: Join other nodes to vault cluster
+  shell: "vault operator raft join https://{% for host in groups['vault'] %}{% if hostvars[host].vault_node_sequence == \"first\" %}{{ host }}{% endif %}{% endfor %}:8200"
+  environment:
+    VAULT_ADDR: "https://{{ inventory_hostname }}:8200"
+  register: vault_init_results
+  when: 
+    - hostvars[inventory_hostname].vault_node_sequence != "first"
+
+- name: Unseal vault other nodes
+  shell: vault operator unseal {{ item }}
+  no_log: true
+  environment:
+    VAULT_ADDR: "https://{{ inventory_hostname }}:8200"
+  loop: "{{ unseal_keys[:3] }}"
+  when: 
+    - hostvars[inventory_hostname].vault_node_sequence != "first"
+
+- name: encrypt file
+  shell: openssl enc -in /tmp/vault_init.json -out /tmp/vault_init.json.dat -e -aes256 -k {{ encryption_password }}
+  when: not vault_installed.stat.exists
+# decript file command : openssl enc -in /tmp/vault_init.json.dat -out /tmp/vault_init.json -d -aes256 -k {{ encryption_password }}
+
+- name: Delete existing vault_init_json
+  file:
+    path: "/tmp/vault_init.json"
+    state: absent
